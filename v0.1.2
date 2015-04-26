@@ -1,14 +1,998 @@
 #-*- coding: euc-kr -*-
 
 import pandas as pd
+import numpy as np
 import time
 import os
 import gc
+import shutil
 
+
+###
 def bigpy(): 
    
-    msg=u'빅파이 모듈 (ver0.1.2) 불러오기가 완료되었습니다. 보건의료 빅데이터 분석을 시작하시면 됩니다.'
+    msg=u"""빅파이 모듈 (ver0.1.2) 불러오기가 완료되었습니다. 
+    보건의료 빅데이터 분석을 시작하시면 됩니다."""
     message=str(msg.encode('utf-8'))
    
     print "%s" % (message)
     
+    
+
+###
+def clean(): 
+   
+    gc.collect()                     #garbage collector
+    msg=u'메모리가 정리되었습니다. 다시 분석을 시작하시면 됩니다.'
+    message=str(msg.encode('utf-8'))
+   
+    print "%s" % (message)
+    
+    
+    
+###
+# make_file_list() 함수: 파일 경로를 입력받아 20,30,40,53 파일 목록을 생성
+
+def make_file_list(file_path):
+    
+    os.chdir(file_path)
+    file_list=os.listdir(file_path)                  # 사용자가 입력한 경로에 저장된 파일 목록 불러들이기
+    #file_list_string=pd.Series(file_list)
+    file_string=pd.Series(file_list).str.split('_')   # 환자표본자료 파일은 "_"을 기준으로 분리해내기 (예, 20테이블 파일명: sample_2011_20_01.txt)
+        
+    t20_file_list=[ ]                                  # 20 테이블 목록을 저장할 빈 리스트
+    t30_file_list=[ ]                                  # 30 테이블 목록을 저장할 빈 리스트
+    t40_file_list=[ ]                                  # 40 테이블 목록을 저장할 빈 리스트
+    t53_file_list=[ ]                                  # 53 테이블 목록을 저장할 빈 리스트
+    
+    for i in xrange(len(file_list)):
+        if len(file_string[i]) <= 2:                      #NPS가 아닌 파일은 패스
+            pass
+        elif file_string[i][2]=='20':                    #파일명에 "20"단어가 있을 경우 t20_file_list에 추가
+            t20_file_list.append(file_list[i])            
+        elif file_string[i][2]=='30':                    #파일명에 "30"단어가 있을 경우 t30_file_list에 추가
+            t30_file_list.append(file_list[i])            
+        elif file_string[i][2]=='40':                    #파일명에 "40"단어가 있을 경우 t40_file_list에 추가
+            t40_file_list.append(file_list[i])            
+        elif file_string[i][2]=='53':                    #파일명에 "53"단어가 있을 경우 t53_file_list에 추가 
+            t53_file_list.append(file_list[i])            
+              
+    return t20_file_list, t30_file_list, t40_file_list, t53_file_list
+                
+                
+###
+# 실행시간 측정을 위한 Timer 클래스
+class Timer:    
+    def __enter__(self):
+        self.start = time.clock()
+        return self
+
+    def __exit__(self, *args):
+        self.end = time.clock()
+        self.interval = self.end - self.start
+
+
+###        
+def link(*args):
+    
+    if len(args)==2:
+        os.chdir(args[0])
+        HDF5_object=pd.HDFStore(args[1]+'.h5')
+    
+    else:
+        HDF5_object=pd.HDFStore(args[0]+'.h5')
+        
+    return HDF5_object
+    
+    
+    
+# table20_load() 함수
+def table20_load(file_path, file_name): 
+
+    with Timer() as t:
+        returned_table=Table20Load(file_path, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'명세서일반 (20 table) 자료 불러오기가 완료되었습니다.'
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)
+    
+    return returned_table
+################################################################
+
+def Table20Load(file_path, file_name):
+    
+    file20_list, file30_list, file40_list, file53_list = make_file_list(file_path)
+    
+    table_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc')             # 20 테이블을 저장할 HDF5 파일 생성. 압력률은 최대 '9' 그리고 압축 알고리즘은 'blosc' 사용
+
+    for file20_name in file20_list: 
+        
+        for chunk in pd.read_csv(file20_name, chunksize=750000):                         # 20 테이블을 pandas 모듈의 read_csv()함수로 읽어들이기. 이때 out-of-memory 상황을 피하기 위해 20 테이블을 50만 열씩 쪼개어(chunk) 읽어들임 
+            
+            table_object.append(file_name, chunk, index=False, data_columns=True)   # 50만 열씩 읽어들인 다음 생성한 table20.h5 파일에 덧붙이기. 이때 index 생성은 하지 않음.
+                                                                                                            # file_name == key name으로 자동 지정
+    return table_object 
+
+
+
+# table30_load() 함수
+
+def table30_load(file_path, file_name): 
+
+    with Timer() as t:
+        returned_table=Table30Load(file_path, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'진료내역 (30 table) 자료 불러오기가 완료되었습니다.'
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s) 
+    
+    return returned_table
+##########################################################
+
+def Table30Load(file_path, file_name):
+    
+    file20_list, file30_list, file40_list, file53_list = make_file_list(file_path)
+    
+    table_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc') 
+
+    for file30_name in file30_list: 
+        
+        for chunk in pd.read_csv(file30_name, chunksize=75000):              
+            
+            table_object.append(file_name, chunk, index=False, data_columns=True)   
+
+   return table_object    
+   
+   
+   
+# table40() 함수
+
+def table40_load(file_path, file_name): 
+
+    with Timer() as t:
+        returned_table=Table40Load(file_path, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'수진자 상병 (40 table) 자료 불러오기가 완료되었습니다.'
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)   
+
+    return returned_table
+##########################################################
+    
+def Table40Load(file_path, file_name):
+    
+    file20_list, file30_list, file40_list, file53_list = make_file_list(file_path)
+    
+    table_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc') 
+
+    for file40_name in file40_list:
+        
+        for chunk in pd.read_csv(file40_name, chunksize=75000):              
+            
+            table_object.append(file_name, chunk, index=False, data_columns=True)   
+            
+   return table_object      
+   
+   
+# table53() 함수
+
+def table53_load(file_path, file_name): 
+
+    with Timer() as t:
+        returned_table=Table53Load(file_path, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'처방전 교부 상세 (53 table) 자료 불러오기가 완료되었습니다.'
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)    
+ 
+    return returned_table
+##########################################################
+
+def Table53Load(file_path, file_name):
+    
+    file20_list, file30_list, file40_list, file53_list = make_file_list(file_path)                                         
+    
+    table_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc')  
+    
+    for file53_name in file53_list:
+        
+        for chunk in pd.read_csv(file53_name, chunksize=75000):
+            
+            table_object.append(file_name, chunk, index=False, data_columns=True)    
+            
+   return table_object         
+   
+# table_load() 함수
+
+def table_load(file_path, file_name): 
+
+    with Timer() as t:
+        returned_table=TableLoad(file_path, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'데이터 불러오기가 완료되었습니다.'
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)    
+ 
+    return returned_table
+##########################################################
+
+def TableLoad(file_path, file_name):                                      
+    
+    table_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc')  
+           
+    for chunk in pd.read_csv(file_path, chunksize=75000):
+        table_object.append(file_name, chunk, index=False, data_columns=True)    
+            
+   return table_object    
+   
+   
+# 데이터 일부분 미리보기
+
+def table_head(table_object):
+    
+    table_length=table_object.get_storer(table_object.keys()[0]).nrows
+    
+    if table_length<10:
+        stop_rows=table_length
+    else:
+        stop_rows=10
+    
+    return table_object.select(table_object.keys()[0], start=0, stop=stop_rows)
+    
+    
+# table_select() 함수
+
+
+def table_select(table_object, *args, **kwargs):
+
+    with Timer() as t:
+        returned_data=TableSelect(table_object, *args, **kwargs)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'실행이 완료되었습니다.' 
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)\n" % (message1, message2, h, m, s)
+    
+    return returned_data
+########################################################################
+
+
+def TableSelect(table_object, *args, **kwargs):
+
+    # arguments가 하나도 입력되지 않았을 경우, 
+    if len(args) or len(kwargs) ==0:
+        #데이터 셋 전체 행 크기 구하기
+        table_length=table_object.get_storer(table_object.keys()[0]).nrows    
+        
+        #전체 행이 10보다 작으면 그 수만큼, 클경우 10으로 지정
+        if table_length<10:
+            stop_rows=table_length
+        else:
+            stop_rows=10    
+        # 0~10행 데이터 셋 반환
+        return table_object.select(table_object.keys()[0], start=0, stop=stop_rows)
+    
+    # 키워드 args가 입력된 경우 
+    elif kwargs.keys()[0]=='where':
+        if len(args)==0:
+            selected_data=table_object.select(table_object.keys()[0], where=kwargs['where'])
+            return selected_data
+        
+        else:
+            selected_data=table_object.select(table_object.keys()[0], where=kwargs['where'])
+            
+            HDF5_object=pd.HDFStore(args[0]+'.h5', 'w', complevel=9, complib='blosc')  
+            HDF5_object.append(args[0], selected_data, index=False, data_columns=True)      
+    
+    # args로 start/stop이 입력된 경우
+    elif len(args)==2:
+        return table_object.select(table_object.keys()[0], start=args[0], stop=args[1])
+
+    # args로 start/stop, 컬럼명 이 입력된 경우
+    elif len(args)==3:
+        return table_object.select(table_object.keys()[0], start=args[0], stop=args[1], columns=[args[2]])
+    
+    # args로 파일명까지 입력된 경우
+    elif len(args)==4:
+        
+        HDF5_file=
+        HDF5_object=pd.HDFStore(args[3]+'.h5', 'w', complevel=9, complib='blosc')  
+                
+        selected_data=table_object.select(table_object.keys()[0], start=args[0], stop=args[1], columns=[args[2]])
+        HDF5_object.append(args[3]+'.h5', selected_data, index=False, data_columns=True)
+
+        return selected_data
+    
+    else:
+        print "잘못된 arguments 입력입니다."
+        
+        
+
+
+# table_keep() 함수: 해당 행(column)만 추려내는 함수
+
+def table_keep(table_object, column_list, file_name): 
+
+    with Timer() as t:
+        returned_table=TableKeep(table_object, column_list, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'%s 열이 %s 파일에 저장되었습니다.' % (str(column_list), str(file_name)+'.h5')
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)\n" % (message1, message2, h, m, s)
+    
+    return returned_table
+########################################################################
+
+def TableKeep(table_object, column_list, file_name):
+    
+    HDF5_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc')
+    
+    for chunk in table_object.select(table_object.keys()[0], chunksize=750000, columns=column_list):
+        
+        HDF5_object.append(file_name, chunk, format='table', index=False, data_columns=True)    
+       
+    return   HDF5_object
+    
+    
+# get_able_info() 함수: 해당 데이터 셋의 정보를 불러오는 함수
+
+def get_table_info(table_object): 
+
+    with Timer() as t:
+        returned_columns_name, returned_table_length=GetTableInfo(table_object)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    returned_table_length="{:,}".format(int(returned_table_length)) 
+    
+    msg1=u'데이터 셋의 크기는 %s열 x %s행 입니다. 변수(열) 명칭은 아래와 같습니다.' % (len(returned_columns_name), returned_table_length)
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)\n" % (message1, message2, h, m, s)
+
+    return returned_columns_name
+
+###############################################################
+
+def GetTableInfo(table_object):
+    
+    # 컬럼 명 DF로 변환
+    columns_name=table_object.select(table_object.keys()[0], start=0,stop=0).columns    
+    columns_name=pd.DataFrame(columns_name)    
+    columns_name.columns=['Name of Columns']    
+    
+    # 총 행 수 계산
+    table_length=table_object.get_storer(table_object.keys()[0]).nrows  
+    
+    return (columns_name, table_length)
+    
+    
+# table_column_rename() 함수: 해당 테이블의 행(column) 이름 변경
+# PyTables는 행 이름 변경을 지원하지 않으므로 어쩔수 없이 모든 데이터를 다시 불러들인 다음 행 이름 변경 후 파일을 re-write할 수 밖에 없음
+
+def table_rename(table_object, column_list, file_name):
+
+    with Timer() as t:
+        returned_HDF5_object=TableRename(table_object, column_list, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+     
+    msg1=u'실행이 완료되었습니다. 새로운 데이터 셋은 %s 파일에 저장되었습니다.' % (str(file_name)+'.h5')
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)\n" % (message1, message2, h, m, s)
+
+    return returned_HDF5_object
+
+############################################################################
+
+def TableRename(table_object, column_list, file_name):
+
+    HDF5_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc')
+    
+    for chunk in table_object.select(table_object.keys()[0], chunksize=500000):
+    
+        chunk_renamed=chunk.rename(columns=column_list)
+        HDF5_object.append(file_name, chunk_renamed, format='table', index=False, data_columns=True)
+            
+    return HDF5_object 
+    
+    
+    
+# table_sort() 함수: 지정된 행(column)을 기준으로 정렬
+
+
+def table_sort(table_object, column_name, file_name): 
+
+    with Timer() as t:
+        returned_HDF5_object=TableSort(table_object, column_name, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'\'%s\'열을 기준으로 정렬이 완료되었습니다. 데이터는 %s 에 저장되었습니다.' % (str(column_name), str(file_name)+'.h5')
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)
+    
+    return returned_HDF5_object
+
+
+def TableSort(table_object, column_name, file_name):
+    
+    cHDF5_file_name=table_object.filename
+    nHDF5_file_name=file_name+'.h5'
+    
+    table_object.create_table_index(table_object.keys()[0], columns=[column_name], optlevel=9, kind='full')
+    table_object.close()
+        
+    os.system("ptrepack --sortby="+column_name+" --complevel=9 --complib=blosc "+cHDF5_file_name+" "+nHDF5_file_name)
+    
+    HDF5_object=pd.HDFStore(nHDF5_file_name)
+    HDF5_object.get_node(HDF5_object.keys()[0])._f_rename(file_name)
+        
+    return HDF5_object
+    
+    
+# table_merge() 함수: 지정된 행(column)을 기준으로 테이블 병합
+# 병합전 정렬 및 중복값 제거가 우선 필요함
+
+
+def table_merge(table_obj1, table_obj2, column_name, how, file_name):
+
+    with Timer() as t:
+        returned_HDF5=TableMerge(table_obj1, table_obj2, column_name, how, file_name)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'%s열을 기준으로 테이블 병합이 완료되었습니다. 데이터는 %s 파일에 저장되었습니다.' % (str(column_name), str(file_name)+'.h5')
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)
+
+    return returned_HDF5
+
+
+def TableMerge(table_obj1, table_obj2, column_name, how, file_name):
+    
+    chunk_size1=500000                                                  #Memory Error시 해당 값을 낮춰준다.
+    chunk_size2=500000
+
+    nrows_obj1 = table_obj1.get_storer(table_obj1.keys()[0]).nrows
+    nrows_obj2 = table_obj2.get_storer(table_obj2.keys()[0]).nrows
+    
+    merged_HDF5=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc') 
+    
+    for i in xrange(int(nrows_obj1/chunk_size1) + 1):
+    
+        obj1_start=i*chunk_size1
+        obj1_stop=min((i+1)*chunk_size1, nrows_obj1)
+        
+        m1=table_obj1.select(table_obj1.keys()[0], start=obj1_start, stop=obj1_stop)
+        
+        
+        for j in xrange(int(nrows_obj2/chunk_size2)+1):
+            
+            obj2_start=j*chunk_size2
+            obj2_stop=min((j+1)*chunk_size2, nrows_obj2)
+            
+            m2=table_obj2.select(table_obj2.keys()[0], start=obj2_start, stop=obj2_stop)
+            
+            
+            merged=pd.merge(m1, m2, on=column_name, how=how, sort=False)               #how = inner, left, right, outer / sort=False를 해야 속도 향상
+            
+            if len(merged):
+                merged_HDF5.append(file_name, merged, index=False, data_columns=True)
+   
+    return merged_HDF5
+    
+    
+# table_concat() 함수: 서로 다른 두 테이블을 y축 방향으로 병합
+
+def table_concat(table_object1, table_object2): 
+
+    with Timer() as t:
+        flag=TableConcat(table_object1, table_object2)
+   
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    if flag=='TRUE':
+        msg1=u'테이블 병합이 완료되었습니다. 데이터는 %s 파일에 저장되었습니다.' % (str(file_name2)+'.h5')
+        message1=str(msg1.encode('utf-8'))
+        msg2=u'소요시간'
+        message2=str(msg2.encode('utf-8'))
+    
+        print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)
+    
+    elif flag=='FALSE':
+        print u'두 테이블의 크기 또는 변수명(columns)이 동일하지 않습니다.'
+
+def TableConcat(table_object1, table_object2):    
+    
+    table_column1=table_object1.select(table_object1.keys()[0], start=0, stop=0).columns
+    table_column2=table_object2.select(table_object2.keys()[0], start=0, stop=0).columns
+        
+    for i in range(len(table_column1)):
+        if table_column1[i] == table_column2[i]:
+            flag='TRUE'
+        else:
+            flag='FALSE'
+            
+               
+    if flag=='TRUE':        
+        source=table_object1.filename
+        destination=table_object2.filename
+        shutil.copy(source,destination)
+        
+        file_name=source[:-3] + destination[:-3]+'.h5'
+        
+        HDF5_object=pd.HDFStore(file_name, complevel=9, complib='blosc')
+                 
+        for chunk in table_object2.select(table_object2.keys()[0], chunksize=50000):
+            HDF5_object.append(file_name[:-3], chunk, index=False, data_columns=True)  
+
+    return flag
+    
+    
+    
+# drop_duplicates() 함수: 지정된 행(column)을 기준으로 중복된 열을 제거
+# sorting을 먼저 실시 후 실행할 것을 권고
+
+def drop_duplicates(table_object, column_list, file_name):   
+    
+    table_length_before=table_object.get_storer(table_object.keys()[0]).nrows
+
+    with Timer() as t:
+        returned_HDF5_object=DropDuplicates(table_object, column_list, file_name)   
+
+    table_length_after=returned_HDF5_object.get_storer(returned_HDF5_object.keys()[0]).nrows
+    length_change= table_length_before - table_length_after
+    length_change="{:,}".format(length_change)
+        
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'총 %s 행이 삭제되었습니다. 데이터는 %s 파일에 저장되었습니다.' % (length_change, str(file_name)+'.h5')
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d)" % (message1, message2, h, m, s)
+
+    return returned_HDF5_object
+
+########################################################################
+
+def DropDuplicates(table_object, column_name, file_name):
+       
+    HDF5_temp_object=pd.HDFStore(file_name+'_temp.h5' , 'w', complevel=9, complib='blosc') 
+    HDF5_object=pd.HDFStore(file_name+'.h5', 'w', complevel=9, complib='blosc')   
+    
+    ##초벌 중복삭제
+    for chunk in table_object.select(table_object.keys()[0], chunksize=50000):
+            HDF5_temp_object.append(file_name, chunk.drop_duplicates(subset=column_name), index=False, data_columns=True)            
+    
+    ##재벌 중복삭제 (chunksize로 인해 발생할수 있는 중복 삭제)
+    for chunk in HDF5_temp_object.select(HDF5_temp_object.keys()[0], chunksize=50000):
+            HDF5_object.append(file_name, chunk.drop_duplicates(subset=column_name), index=False, data_columns=True)            
+      
+    HDF5_temp_object.close()    # temp 파일 닫기
+    os.remove(HDF5_temp_file) # temp 파일 삭제
+
+    return HDF5_object
+    
+    
+    
+    
+# table_value_count() 함수: 지정된 열(column)을 기준으로 행(row) 값을 count
+
+def table_value_counts(table_object, column_name):     
+
+    with Timer() as t:
+        returned_value_counts=TableValueCounts(table_object, column_name)
+    
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'\'%s\'변수(column)에 대한 빈도 값은 아래와 같습니다.' % (column_name)
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d) \n" % (message1, message2, h, m, s)
+
+    return returned_value_counts
+
+#######################################################################################
+
+def TableValueCounts(table_object, column_name):
+  
+    chunk_size=500000         # 메모리 용량에 따라 변경
+
+    table_length=table_object.get_storer(table_object.keys()[0]).nrows
+    
+    store=pd.Series()
+    
+    for i in xrange(int(table_length/chunk_size) + 1):
+        
+        row_start=i*chunk_size        
+        row_stop=min((i+1)*chunk_size, table_length)
+        
+        chunk=table_object.select(table_object.keys()[0], columns=[column_name], start=row_start, stop=row_stop)
+        
+        count=chunk[column_name].value_counts()
+        store=pd.concat([store, count], axis=1)         # axis=1은 column 축에 따라 이어 붙이기, axis=0일 경우 row축에 따라 이어 붙이기가 됨. 
+            
+    value_count=store.fillna(0).transpose().sum()      # NaN값은 0으로 변환, transpose로 행/열 변환
+    value_count=value_count.reset_index().rename(columns={'index': 'Value', 0:'Counts'}).set_index(keys='Value')  # Column 명칭을 Value와 Counts로 최종 변경
+    
+    return value_count
+    
+    
+    
+# disease_count() 함수: 상병 리스트를 입력받아  주상병 부상명 코드에 대응되는 빈도수를 반환
+
+def disease_counts(table_obj, column_name, ICD_code):
+      
+    store={ }
+    
+    value_count=table_value_counts(table_obj, column_name)
+    
+   
+    for i in xrange(len(ICD_code)):
+        
+        counts=value_count.loc[ICD_code[i]]
+        
+        store.update( {ICD_code[i] : int(counts)} )       # 사용자가 입력한 상병코드와 이에 대응되는 빈도수를 dict로 업데이트
+    
+    ICD_count=pd.DataFrame(store.items(), columns=['ICD_code','Counts'], index=range(1, len(ICD_code)+1)) #  최종 데이터프레임으로 변환하고, column 명칭 재설정, index는 1부터 시작하도록 재설정 
+    
+    return ICD_count
+
+###########################################################################################
+# disease_count_by_type() 함수: 상병 리스트를 입력받아  주상병 부상명 코드에 대응되는 빈도수를 서식코드와 함께 반환
+
+def disease_counts_by_type(table_obj, key_name, column_name, ICD_code):
+  
+    chunk_size=500000         # 메모리 용량에 따라 변경
+
+    table_length=table_obj.get_storer(key_name).nrows   # 테이블 전체 행의 크기를 확인
+    
+    store1=pd.DataFrame()
+    ICD_code_store=pd.DataFrame()
+  
+    
+    #############################
+    # 빅데이터 분석을 위한 chunk process
+    
+    for i in xrange(int(table_length/chunk_size) + 1):
+        
+        row_start=i*chunk_size
+        
+        row_stop=min((i+1)*chunk_size, table_length)
+        
+        chunk=table_obj.select(key_name, columns=[column_name, 'FOM_CD', 'NO'], start=row_start, stop=row_stop)
+        
+        chunk_grouped=chunk.groupby([column_name, 'FOM_CD'])   #goupby연산을 통해 상병 코드별 서식 코드를 추려냄
+        
+        counts=chunk_grouped.count()                                       #groupby 객체에 빈도수 계산
+                   
+        store1=pd.concat([store1, counts])                                   #빈 데이터프레임에 계산한 내용 업데이트
+           
+
+    #################################################
+    # 사용자가 입력한 ICD_code 리스트별로 빈도수 확인하는 process
+   
+    for i in xrange(len(ICD_code)):
+        
+        if type(store1.loc[ICD_code[i]])==type(ICD_code_store):
+            
+            store2=store1.reset_index()
+            store3=store2.set_index('MSICK_CD')
+            store4=store3.loc[ICD_code[i]]
+            
+            store5=store4.reset_index()
+            store6=store5.groupby(['MSICK_CD', 'FOM_CD'])
+            store7=store6.count()
+                        
+            ICD_code_store=pd.concat([ ICD_code_store, store7])
+            
+        else:
+            pass            
+            #seriese인 경우 dataframe으로 변환 (상병코드당 서식코드가 하나인 경우)
+            #conversion=pd.DataFrame({store1.loc[ICD_code[i]][0] : store1.loc[ICD_code[i]][1]}.items(), index=[ICD_code[1]], columns=['FOM_CD', 'NO'])
+            #x2=pd.concat([x2, conversion])
+            
+    
+    return ICD_code_store.rename(columns={'NO' : 'Counts'})
+
+
+# table_value_sum() 함수: 해당 열의 총합을 반환 (숫자만 처리, NA는 무시)
+# 개별 환자당 총합은 실행 전 정렬 시행 필요
+
+def table_value_sum(table_object, *args):
+    
+    if len(args)==1: 
+        with Timer() as t:
+            total_sum, total_mean, total_std, total_min, total_max=TableValueSum(table_object, *args)
+            
+        m, s = divmod(t.interval, 60)
+        h, m = divmod(m, 60)
+        
+        msg1=u'실행이 완료되었습니다.'  
+        message1=str(msg1.encode('utf-8'))
+        msg2=u'소요시간'
+        message2=str(msg2.encode('utf-8'))
+        
+        print "%s (%s: %02d:%02d:%02d)\n" % (message1, message2, h, m, s)
+           
+    
+    elif len(args)==2:
+        with Timer() as t:
+            total_sum, total_mean, total_std, total_min, total_max=TableValueSumWFile(table_object, *args)
+            
+        m, s = divmod(t.interval, 60)
+        h, m = divmod(m, 60)
+        
+        msg1=u'실행이 완료되었습니다.'  
+        message1=str(msg1.encode('utf-8'))
+        msg2=u'소요시간'
+        message2=str(msg2.encode('utf-8'))
+        
+        print "%s (%s: %02d:%02d:%02d)\n" % (message1, message2, h, m, s)     
+    
+    return pd.DataFrame([ total_sum, total_mean, total_std, total_min, total_max], index=['total', 'mean', 'std', 'min', 'max'], columns=['Value'])
+
+
+###########################################################################
+
+def TableValueSum(table_object, *args):
+  
+    chunk_size=500000         # 메모리 용량에 따라 변경
+
+    table_length=table_object.get_storer(table_object.keys()[0]).nrows
+      
+    temp=pd.DataFrame()
+    store=pd.DataFrame()
+    total_sum=0
+        
+    for i in xrange(int(table_length/chunk_size) + 1):
+        
+        row_start=i*chunk_size
+        row_stop=min((i+1)*chunk_size, table_length)
+        
+        chunk=table_object.select(table_object.keys()[0], columns=[args[0], 'NO'], start=row_start, stop=row_stop)
+                
+        # 총합, 평균, 최대, 최소
+        total_sum=total_sum+ chunk.loc[:, args[0]].sum(skipna=True) # numeric_only=True)      
+        chunk_desc=pd.DataFrame(chunk.loc[:, args[0]].describe())        
+        store=pd.concat([store, chunk_desc], axis=1)         # axis=1은 column 축에 따라 이어 붙이기, axis=0일 경우 row축에 따라 이어 붙이기가 됨.     
+                           
+                    
+    # 총합, 평균, 최대, 최소
+    total_sum="{:,}".format(total_sum)
+    
+    total_mean=store.loc['mean'].mean()
+    total_mean="{:,}".format(total_mean)
+    
+    total_std=store.loc['std']
+    total_std=total_std*total_std
+    total_std=total_std.sum()/len(total_std)
+    total_std=sqrt(total_std)
+    total_std="{:,}".format(total_std)
+       
+    total_min=store.loc['min'].min()
+    total_min="{:,}".format(total_min)
+        
+    total_max=store.loc['max'].max()
+    total_max="{:,}".format(total_max)
+        
+    return total_sum, total_mean, total_std, total_min, total_max
+        
+        
+##################################################
+
+def TableValueSumWFile(table_object, *args):
+  
+    chunk_size=500000         # 메모리 용량에 따라 변경
+
+    table_length=table_object.get_storer(table_object.keys()[0]).nrows
+      
+    temp=pd.DataFrame()
+    store=pd.DataFrame()
+    total_sum=0
+
+    HDF5_file_name=args[1]+'.h5'
+    HDF5_object=pd.HDFStore(HDF5_file_name, 'w', complevel=9, complib='blosc')
+        
+    for i in xrange(int(table_length/chunk_size) + 1):
+        
+        row_start=i*chunk_size
+        row_stop=min((i+1)*chunk_size, table_length)
+        
+        chunk=table_object.select(table_object.keys()[0], columns=[args[0], 'NO'], start=row_start, stop=row_stop)
+                
+        # 총합, 평균, 최대, 최소
+        total_sum=total_sum+ chunk.loc[:, args[0]].sum(skipna=True) # numeric_only=True)      
+        chunk_desc=pd.DataFrame(chunk.loc[:, args[0]].describe())        
+        store=pd.concat([store, chunk_desc], axis=1)                     # axis=1은 column 축에 따라 이어 붙이기, axis=0일 경우 row축에 따라 이어 붙이기가 됨.     
+                           
+            
+        # 개별환자 
+        chunk_grouped=chunk.groupby('NO')
+        sum_by_patient=chunk_grouped.sum()
+        sum_by_patient=sum_by_patient.reset_index()
+        HDF5_object.append(args[1], sum_by_patient, index=False, data_columns=True)
+        
+   
+    HDF5_object.close()
+        
+    # 총합, 평균, 최대, 최소
+    total_sum="{:,}".format(total_sum)
+    
+    total_mean=store.loc['mean'].mean()
+    total_mean="{:,}".format(total_mean)
+    
+    total_std=store.loc['std']
+    total_std=total_std*total_std                # 표준편차의 제곱으로 분산으로 변환
+    total_std=total_std.sum()/len(total_std)  # 분산의 총합을 샘플수로 나누기
+    total_std=sqrt(total_std)                    # avg 분산을 sqrt로 표준편차로 변환
+    total_std="{:,}".format(total_std)
+       
+    total_min=store.loc['min'].min()
+    total_min="{:,}".format(total_min)
+        
+    total_max=store.loc['max'].max()
+    total_max="{:,}".format(total_max)
+        
+    return total_sum, total_mean, total_std, total_min, total_max  
+    
+    
+ def table_save(*arg):
+    
+    if arg[1]=='csv':
+        arg[0].to_csv(arg[2]+'.csv')
+        
+    elif arg[1]=='excel':
+        arg[0].to_excel(arg[2]+'.xlsx')
+        
+    elif arg[1]=='stata':
+        arg[0].to_stata(arg[2]+'.dta')
+        
+    elif arg[1]=='clip':
+        arg[0].to_clipboard()
+        
+    elif arg[1]=='html':
+        print(arg[0].to_html())
+        
+    #elif arg[1]=='r':
+    #    import pandas.rpy.common as com
+    #    var[0].to_csv(var[2])
+                 
+    return
+    
+    
+# table_query
+
+def table_query(table_object, column_name, query, file_name):     
+
+    with Timer() as t:
+        returned_HDF5=TableQuery(table_object, column_name, query, file_name)
+    
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'실행이 완료되었습니다.' 
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d) \n" % (message1, message2, h, m, s)
+
+    return returned_HDF5
+
+#######################################################################################
+
+def TableQuery(table_object, column_name, query, file_name):
+  
+    HDF5_object=pd.HDFStore(file_name+'.h5','w', complevel=9, complib='blosc')
+       
+    for Q in query: 
+        for chunk in table_object.select(table_object.keys()[0], chunksize=50000):
+            queried_data=chunk[chunk[column_name].str.contains(Q)]
+            HDF5_object.append(file_name, queried_data, min_itemsize=data_shape_20table, index=False, data_columns=True)  
+       
+    return HDF5_object
+    
+    
+    
+def table_groupby(table_object, column_list, groupby_column):
+
+    with Timer() as t:
+        returned_HDF5=TableGroupBy(table_object, column_list, groupby_column)
+    
+    m, s = divmod(t.interval, 60)
+    h, m = divmod(m, 60)
+    
+    msg1=u'실행이 완료되었습니다.' 
+    message1=str(msg1.encode('utf-8'))
+    msg2=u'소요시간'
+    message2=str(msg2.encode('utf-8'))
+    
+    print "%s (%s: %02d:%02d:%02d) \n" % (message1, message2, h, m, s)
+
+    return returned_HDF5
+
+#######################################################################################
+
+def TableGroupBy(table_object, column_list, groupby_column):
+    
+    temp=pd.DataFrame()
+    chunk_size=50000
+    nrows_obj= table_object.get_storer(table_object.keys()[0]).nrows    
+    
+    for i in xrange(int(nrows_obj/chunk_size) + 1):
+        row_start=i*chunk_size
+        row_stop=min((i+1)*chunk_size, nrows_obj)  
+        chunk=table_object.select(table_object.keys()[0], start=row_start, stop=row_stop)
+        
+        selected_column=chunk[column_list]
+        grouped_column=selected_column.groupby(groupby_column)
+        value_counts=grouped_column.count()
+        temp=pd.concat([temp,value_counts], axis=1)    
+        msg=gc.collect()
+    return temp
+    
+
